@@ -6,7 +6,7 @@
     <title>YouTube 채널 분석기</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <style>
-	        .related-channels {
+        .related-channels {
             margin-top: 25px;
         }
 
@@ -91,6 +91,58 @@
             font-weight: bold;
             margin-top: 10px;
         }
+
+        .connection-status {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 0.9em;
+            font-weight: bold;
+            z-index: 1000;
+        }
+
+        .status-connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .status-connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .server-config {
+            background: rgba(255,255,255,0.1);
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        .server-input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        .server-btn {
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -215,13 +267,6 @@
         .channel-name {
             font-size: 1.8em;
             margin-bottom: 10px;
-        }
-
-        .channel-stats {
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-            margin-top: 15px;
         }
 
         .stat-item {
@@ -418,6 +463,8 @@
     </style>
 </head>
 <body>
+    <div class="connection-status" id="connectionStatus">연결 중...</div>
+    
     <div class="container">
         <div class="header">
             <h1>📺 YouTube 채널 분석기</h1>
@@ -428,11 +475,24 @@
             <p>이 사이트를 사용하고싶다면 디스코드 nodamanote 를 친추주세요</p>
         </div>
 
+        <div class="server-config">
+            <div class="help-title">🔧 서버 설정</div>
+            <div style="color: white; margin-bottom: 10px;">
+                현재 서버: <span id="currentServer">uru.kro.kr:3000</span>
+            </div>
+            <input type="text" class="server-input" id="serverInput" placeholder="서버 주소:포트 (예: localhost:3000)" value="uru.kro.kr:3000">
+            <button class="server-btn" onclick="connectToServer()">서버 연결</button>
+            <button class="server-btn" onclick="testConnection()">연결 테스트</button>
+        </div>
+
         <div class="help-section">
             <div class="help-title">💡 사용 방법</div>
             <div class="help-text">
                 YouTube 채널 URL 또는 채널 ID를 입력하세요.<br>
-                예: https://www.youtube.com/channel/UCxxxxxx 또는 UCxxxxxx
+                예: https://www.youtube.com/channel/UCxxxxxx 또는 UCxxxxxx<br><br>
+                ⚠️ HTTPS에서 HTTP 서버 연결 시 주의사항:<br>
+                • 브라우저에서 Mixed Content 경고가 표시될 수 있습니다<br>
+                • Chrome에서는 주소창의 🛡️ 아이콘을 클릭하여 "안전하지 않은 콘텐츠"를 허용해야 할 수 있습니다
             </div>
         </div>
 
@@ -478,7 +538,7 @@
             </div>
 
             <div class="analysis-content">
-			    <div class="related-channels">
+                <div class="related-channels">
                     <div class="category-title">🔗 검색 관련 채널 | 부계정X</div>
                     <div id="relatedChannelsList">
                         <div class="no-related-channels">
@@ -486,6 +546,7 @@
                         </div>
                     </div>
                 </div>
+                
                 <div class="category-section">
                     <div class="category-title">📊 채널 카테고리 (영상 카테고리 X)</div>
                     <span class="category-badge" id="categoryBadge"></span>
@@ -517,9 +578,8 @@
     </div>
 
     <script>
-        // 웹소켓 서버 주소 설정 (실제 서버 주소로 변경 필요)
-        const WEBSOCKET_SERVER = 'ws://uru.kro.kr:3000'; // 또는 실제 서버 주소
-        const socket = io(WEBSOCKET_SERVER);
+        let socket;
+        let currentServerUrl = 'uru.kro.kr:3000';
         
         // DOM 요소들
         const searchForm = document.getElementById('searchForm');
@@ -529,8 +589,111 @@
         const loadingText = document.getElementById('loadingText');
         const errorSection = document.getElementById('errorSection');
         const resultsSection = document.getElementById('resultsSection');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const currentServerSpan = document.getElementById('currentServer');
+        const serverInput = document.getElementById('serverInput');
 
+        // 연결 상태 업데이트
+        function updateConnectionStatus(status, message) {
+            connectionStatus.className = 'connection-status';
+            connectionStatus.classList.add(`status-${status}`);
+            connectionStatus.textContent = message;
+        }
 
+        // 서버 연결 함수
+        function connectToServer() {
+            const serverUrl = serverInput.value.trim();
+            if (!serverUrl) {
+                alert('서버 주소를 입력해주세요.');
+                return;
+            }
+
+            if (socket) {
+                socket.disconnect();
+            }
+
+            currentServerUrl = serverUrl;
+            currentServerSpan.textContent = serverUrl;
+            
+            // HTTP와 HTTPS 모두 지원하도록 설정
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${serverUrl}`;
+            
+            updateConnectionStatus('connecting', '연결 중...');
+            
+            try {
+                socket = io(wsUrl, {
+                    transports: ['websocket', 'polling'],
+                    timeout: 10000,
+                    forceNew: true
+                });
+
+                setupSocketEvents();
+            } catch (error) {
+                console.error('Socket connection error:', error);
+                updateConnectionStatus('disconnected', '연결 실패');
+                showError('서버 연결에 실패했습니다. 서버 주소를 확인해주세요.');
+            }
+        }
+
+        // 연결 테스트 함수
+        function testConnection() {
+            if (!socket || !socket.connected) {
+                alert('먼저 서버에 연결해주세요.');
+                return;
+            }
+            
+            socket.emit('test_connection', { message: 'ping' });
+        }
+
+        // 소켓 이벤트 설정
+        function setupSocketEvents() {
+            socket.on('connect', () => {
+                console.log('서버에 연결됨');
+                updateConnectionStatus('connected', '연결됨');
+            });
+
+            socket.on('disconnect', () => {
+                console.log('서버 연결 해제됨');
+                updateConnectionStatus('disconnected', '연결 끊어짐');
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('Connection error:', error);
+                updateConnectionStatus('disconnected', '연결 오류');
+                showError('서버 연결 오류가 발생했습니다. 네트워크 설정을 확인해주세요.');
+            });
+
+            socket.on('test_connection', (data) => {
+                alert('연결 테스트 성공!');
+            });
+
+            socket.on('analysis_start', (data) => {
+                showLoading(data.message);
+            });
+
+            socket.on('analysis_progress', (data) => {
+                const progressDiv = document.querySelector('.progress-message');
+                if (progressDiv) {
+                    progressDiv.textContent = data.message;
+                } else {
+                    const newProgressDiv = document.createElement('div');
+                    newProgressDiv.className = 'progress-message';
+                    newProgressDiv.textContent = data.message;
+                    loadingSection.appendChild(newProgressDiv);
+                }
+            });
+
+            socket.on('analysis_complete', (data) => {
+                displayResults(data);
+            });
+
+            socket.on('analysis_error', (data) => {
+                showError(data.error);
+            });
+        }
+
+        // 관련 채널 표시
         function displayRelatedChannels(relatedChannels) {
             const relatedChannelsList = document.getElementById('relatedChannelsList');
             relatedChannelsList.innerHTML = '';
@@ -562,22 +725,7 @@
                 relatedChannelsList.appendChild(channelDiv);
             });
         }
-		
-		
 
-        // 소켓 이벤트 처리 추가 (기존 소켓 이벤트들 다음에 추가)
-        socket.on('analysis_progress', (data) => {
-            const progressDiv = document.querySelector('.progress-message');
-            if (progressDiv) {
-                progressDiv.textContent = data.message;
-            } else {
-                const newProgressDiv = document.createElement('div');
-                newProgressDiv.className = 'progress-message';
-                newProgressDiv.textContent = data.message;
-                loadingSection.appendChild(newProgressDiv);
-            }
-        });
-		
         // 유틸리티 함수들
         function formatNumber(num) {
             if (num >= 1000000) {
@@ -589,12 +737,10 @@
         }
 
         function extractChannelId(input) {
-            // 이미 채널 ID인 경우
             if (input.startsWith('UC') && input.length === 24) {
                 return input;
             }
             
-            // URL에서 채널 ID 추출
             const patterns = [
                 /youtube\.com\/channel\/([a-zA-Z0-9_-]+)/,
                 /youtube\.com\/c\/([a-zA-Z0-9_-]+)/,
@@ -640,18 +786,15 @@
         }
 
         function displayResults(data) {
-            // 채널 기본 정보
             document.getElementById('channelName').textContent = data.channel_name;
             document.getElementById('subscriberCount').textContent = formatNumber(data.subscriber_count);
             document.getElementById('videoCount').textContent = formatNumber(data.video_count);
             document.getElementById('viewCount').textContent = formatNumber(data.view_count);
 
-            // 카테고리 정보
             document.getElementById('categoryBadge').textContent = data.category;
             document.getElementById('confidenceText').textContent = data.confidence.toFixed(1) + '%';
             document.getElementById('confidenceFill').style.width = data.confidence + '%';
 
-            // 알고리즘 상태
             const algorithmStatus = document.getElementById('algorithmStatus');
             const problemsList = document.getElementById('problemsList');
             
@@ -663,7 +806,6 @@
                 algorithmStatus.className = 'algorithm-status status-problem';
             }
 
-            // 문제점 목록
             problemsList.innerHTML = '';
             const problems = data.algorithm_report.problems;
             for (const [key, problem] of Object.entries(problems)) {
@@ -676,10 +818,8 @@
                 problemsList.appendChild(problemDiv);
             }
 
-            // 추천사항
             document.getElementById('recommendationText').textContent = data.recommendations;
 
-            // 최근 영상
             const recentVideosList = document.getElementById('recentVideosList');
             recentVideosList.innerHTML = '';
             data.recent_videos.forEach(video => {
@@ -694,9 +834,7 @@
                 recentVideosList.appendChild(videoDiv);
             });
             
-			// 부계정 정보 표시 (여기에 추가)
-            
-			displayRelatedChannels(data.related_channels);
+            displayRelatedChannels(data.related_channels);
 
             hideLoading();
             resultsSection.style.display = 'block';
@@ -722,36 +860,23 @@
             return texts[severity] || '알 수 없음';
         }
 
-        // 이벤트 리스너들
+        // 이벤트 리스너
         searchForm.addEventListener('submit', (e) => {
             e.preventDefault();
+            
+            if (!socket || !socket.connected) {
+                showError('서버에 연결되어 있지 않습니다. 먼저 서버에 연결해주세요.');
+                return;
+            }
+            
             const channelId = extractChannelId(channelInput.value);
             if (channelId) {
                 socket.emit('analyze_channel', { channelId });
             }
         });
 
-        // 소켓 이벤트 처리
-        socket.on('analysis_start', (data) => {
-            showLoading(data.message);
-        });
-
-        socket.on('analysis_complete', (data) => {
-            displayResults(data);
-        });
-
-        socket.on('analysis_error', (data) => {
-            showError(data.error);
-        });
-
-        // 연결 상태 확인
-        socket.on('connect', () => {
-            console.log('서버에 연결됨');
-        });
-
-        socket.on('disconnect', () => {
-            console.log('서버 연결 해제됨');
-        });
+        // 초기 연결
+        connectToServer();
     </script>
 </body>
 </html>
