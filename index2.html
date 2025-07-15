@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube 채널 분석기</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+	        .related-channels {
+            margin-top: 25px;
+        }
+
+        .related-channel-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .related-channel-item:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .channel-info {
+            flex: 1;
+        }
+
+        .channel-info h4 {
+            margin: 0 0 5px 0;
+            color: #333;
+        }
+
+        .channel-info p {
+            margin: 0;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .channel-stats {
+            display: flex;
+            gap: 15px;
+            margin-top: 5px;
+        }
+
+        .channel-stat {
+            font-size: 0.8em;
+            color: #888;
+        }
+
+        .similarity-score {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .visit-channel-btn {
+            background: #667eea;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+            transition: background 0.3s;
+            margin-left: 10px;
+        }
+
+        .visit-channel-btn:hover {
+            background: #5a6fd8;
+        }
+
+        .no-related-channels {
+            text-align: center;
+            color: #888;
+            padding: 20px;
+            font-style: italic;
+        }
+
+        .progress-message {
+            text-align: center;
+            color: #667eea;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+
+        .search-section {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+
+        .search-form {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .search-input {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .search-btn {
+            padding: 15px 30px;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.3s;
+        }
+
+        .search-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .search-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .results-section {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            overflow: hidden;
+            margin-bottom: 30px;
+        }
+
+        .channel-header {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .channel-name {
+            font-size: 1.8em;
+            margin-bottom: 10px;
+        }
+
+        .channel-stats {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            margin-top: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-number {
+            font-size: 1.5em;
+            font-weight: bold;
+            display: block;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+
+        .analysis-content {
+            padding: 30px;
+        }
+
+        .category-section {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .category-title {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .category-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            border-radius: 20px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .confidence-bar {
+            background: #e0e0e0;
+            height: 8px;
+            border-radius: 4px;
+            margin-top: 10px;
+            overflow: hidden;
+        }
+
+        .confidence-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s ease;
+        }
+
+        .algorithm-section {
+            margin-bottom: 25px;
+        }
+
+        .algorithm-status {
+            display: inline-block;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+
+        .status-clean {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-problem {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .problem-item {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+        }
+
+        .problem-critical {
+            background: #f8d7da;
+            border-left-color: #dc3545;
+        }
+
+        .problem-high {
+            background: #f8d7da;
+            border-left-color: #fd7e14;
+        }
+
+        .problem-medium {
+            background: #fff3cd;
+            border-left-color: #ffc107;
+        }
+
+        .problem-low {
+            background: #d1ecf1;
+            border-left-color: #17a2b8;
+        }
+
+        .recommendations-section {
+            background: #e8f5e8;
+            padding: 25px;
+            border-radius: 10px;
+            margin-top: 25px;
+        }
+
+        .recommendations-title {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #2d5a2d;
+        }
+
+        .recommendation-text {
+            line-height: 1.6;
+            white-space: pre-wrap;
+            color: #2d5a2d;
+        }
+
+        .recent-videos {
+            margin-top: 25px;
+        }
+
+        .video-item {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .video-item:last-child {
+            border-bottom: none;
+        }
+
+        .video-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .video-date {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .help-section {
+            background: rgba(255,255,255,0.1);
+            padding: 20px;
+            border-radius: 10px;
+            color: white;
+            margin-bottom: 20px;
+        }
+
+        .help-title {
+            font-size: 1.2em;
+            margin-bottom: 10px;
+        }
+
+        .help-text {
+            line-height: 1.5;
+            opacity: 0.9;
+        }
+
+        @media (max-width: 768px) {
+            .search-form {
+                flex-direction: column;
+            }
+            
+            .channel-stats {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .container {
+                padding: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📺 YouTube 채널 분석기</h1>
+            <p>유튜브 채널 분석 돈으로 주고 쓰시나요? 여기서 무료로 사용해보세요!!</p>
+            <p>유튜브 채널을 분석하여 알고리즘 최적화 방안을 제안합니다</p>
+            <p>분석을 하고 이해를 하셨다면 "노트블럭전문가" 채널을 구독해주세요!!</p>
+            <p>이 사이트는 24시간이 아닙니다 웹소켓[서버]을 켜야 접속할수있기에</p>
+            <p>이 사이트를 사용하고싶다면 디스코드 nodamanote 를 친추주세요</p>
+        </div>
+
+        <div class="help-section">
+            <div class="help-title">💡 사용 방법</div>
+            <div class="help-text">
+                YouTube 채널 URL 또는 채널 ID를 입력하세요.<br>
+                예: https://www.youtube.com/channel/UCxxxxxx 또는 UCxxxxxx
+            </div>
+        </div>
+
+        <div class="search-section">
+            <form class="search-form" id="searchForm">
+                <input 
+                    type="text" 
+                    class="search-input" 
+                    id="channelInput"
+                    placeholder="YouTube 채널 URL 또는 채널 ID를 입력하세요"
+                    required
+                >
+                <button type="submit" class="search-btn" id="searchBtn">
+                    분석 시작
+                </button>
+            </form>
+        </div>
+
+        <div id="loadingSection" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <div id="loadingText">채널 분석을 시작합니다...</div>
+        </div>
+
+        <div id="errorSection" class="error-message" style="display: none;"></div>
+
+        <div id="resultsSection" class="results-section" style="display: none;">
+            <div class="channel-header">
+                <div class="channel-name" id="channelName"></div>
+                <div class="channel-stats">
+                    <div class="stat-item">
+                        <span class="stat-number" id="subscriberCount">0</span>
+                        <span class="stat-label">구독자</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="videoCount">0</span>
+                        <span class="stat-label">영상</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-number" id="viewCount">0</span>
+                        <span class="stat-label">총 조회수</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="analysis-content">
+			    <div class="related-channels">
+                    <div class="category-title">🔗 검색 관련 채널 | 부계정X</div>
+                    <div id="relatedChannelsList">
+                        <div class="no-related-channels">
+                            관련 채널을 찾을 수 없습니다.
+                        </div>
+                    </div>
+                </div>
+                <div class="category-section">
+                    <div class="category-title">📊 채널 카테고리 (영상 카테고리 X)</div>
+                    <span class="category-badge" id="categoryBadge"></span>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill" id="confidenceFill"></div>
+                    </div>
+                    <div style="margin-top: 5px; font-size: 0.9em; color: #666;">
+                        신뢰도: <span id="confidenceText">0%</span>
+                    </div>
+                </div>
+
+                <div class="algorithm-section">
+                    <div class="category-title">🔍 알고리즘 분석</div>
+                    <div class="algorithm-status" id="algorithmStatus"></div>
+                    <div id="problemsList"></div>
+                </div>
+
+                <div class="recommendations-section">
+                    <div class="recommendations-title">💡 개선 권장사항</div>
+                    <div class="recommendation-text" id="recommendationText"></div>
+                </div>
+
+                <div class="recent-videos">
+                    <div class="category-title">🎬 최근 영상</div>
+                    <div id="recentVideosList"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 웹소켓 서버 주소 설정 (실제 서버 주소로 변경 필요)
+        const WEBSOCKET_SERVER = 'ws://uru.kro.kr:3000'; // 또는 실제 서버 주소
+        const socket = io(WEBSOCKET_SERVER);
+        
+        // DOM 요소들
+        const searchForm = document.getElementById('searchForm');
+        const channelInput = document.getElementById('channelInput');
+        const searchBtn = document.getElementById('searchBtn');
+        const loadingSection = document.getElementById('loadingSection');
+        const loadingText = document.getElementById('loadingText');
+        const errorSection = document.getElementById('errorSection');
+        const resultsSection = document.getElementById('resultsSection');
+
+
+        function displayRelatedChannels(relatedChannels) {
+            const relatedChannelsList = document.getElementById('relatedChannelsList');
+            relatedChannelsList.innerHTML = '';
+            
+            if (!relatedChannels || relatedChannels.length === 0) {
+                relatedChannelsList.innerHTML = '<div class="no-related-channels">관련 채널을 찾을 수 없습니다.</div>';
+                return;
+            }
+            
+            relatedChannels.forEach(channel => {
+                const channelDiv = document.createElement('div');
+                channelDiv.className = 'related-channel-item';
+                channelDiv.innerHTML = `
+                    <div class="channel-info">
+                        <h4>${channel.channel_name}</h4>
+                        <div class="channel-stats">
+                            <span class="channel-stat">구독자: ${formatNumber(channel.subscriber_count)}</span>
+                            <span class="channel-stat">영상: ${formatNumber(channel.video_count)}</span>
+                            <span class="channel-stat">생성일: ${formatDate(channel.created_date)}</span>
+                        </div>
+                    </div>
+                    <div style="display: flex; align-items: center;">
+                        <div class="similarity-score">유사도: ${(channel.similarity_score * 100).toFixed(1)}%</div>
+                        <button class="visit-channel-btn" onclick="window.open('${channel.channel_url}', '_blank')">
+                            채널 방문
+                        </button>
+                    </div>
+                `;
+                relatedChannelsList.appendChild(channelDiv);
+            });
+        }
+		
+		
+
+        // 소켓 이벤트 처리 추가 (기존 소켓 이벤트들 다음에 추가)
+        socket.on('analysis_progress', (data) => {
+            const progressDiv = document.querySelector('.progress-message');
+            if (progressDiv) {
+                progressDiv.textContent = data.message;
+            } else {
+                const newProgressDiv = document.createElement('div');
+                newProgressDiv.className = 'progress-message';
+                newProgressDiv.textContent = data.message;
+                loadingSection.appendChild(newProgressDiv);
+            }
+        });
+		
+        // 유틸리티 함수들
+        function formatNumber(num) {
+            if (num >= 1000000) {
+                return (num / 1000000).toFixed(1) + 'M';
+            } else if (num >= 1000) {
+                return (num / 1000).toFixed(1) + 'K';
+            }
+            return num.toString();
+        }
+
+        function extractChannelId(input) {
+            // 이미 채널 ID인 경우
+            if (input.startsWith('UC') && input.length === 24) {
+                return input;
+            }
+            
+            // URL에서 채널 ID 추출
+            const patterns = [
+                /youtube\.com\/channel\/([a-zA-Z0-9_-]+)/,
+                /youtube\.com\/c\/([a-zA-Z0-9_-]+)/,
+                /youtube\.com\/user\/([a-zA-Z0-9_-]+)/,
+                /youtube\.com\/@([a-zA-Z0-9_-]+)/
+            ];
+            
+            for (const pattern of patterns) {
+                const match = input.match(pattern);
+                if (match) {
+                    return match[1];
+                }
+            }
+            
+            return input.trim();
+        }
+
+        function showLoading(message) {
+            loadingText.textContent = message;
+            loadingSection.style.display = 'block';
+            errorSection.style.display = 'none';
+            resultsSection.style.display = 'none';
+            searchBtn.disabled = true;
+            searchBtn.textContent = '분석 중...';
+        }
+
+        function hideLoading() {
+            loadingSection.style.display = 'none';
+            searchBtn.disabled = false;
+            searchBtn.textContent = '분석 시작';
+        }
+
+        function showError(message) {
+            errorSection.textContent = message;
+            errorSection.style.display = 'block';
+            resultsSection.style.display = 'none';
+            hideLoading();
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString('ko-KR');
+        }
+
+        function displayResults(data) {
+            // 채널 기본 정보
+            document.getElementById('channelName').textContent = data.channel_name;
+            document.getElementById('subscriberCount').textContent = formatNumber(data.subscriber_count);
+            document.getElementById('videoCount').textContent = formatNumber(data.video_count);
+            document.getElementById('viewCount').textContent = formatNumber(data.view_count);
+
+            // 카테고리 정보
+            document.getElementById('categoryBadge').textContent = data.category;
+            document.getElementById('confidenceText').textContent = data.confidence.toFixed(1) + '%';
+            document.getElementById('confidenceFill').style.width = data.confidence + '%';
+
+            // 알고리즘 상태
+            const algorithmStatus = document.getElementById('algorithmStatus');
+            const problemsList = document.getElementById('problemsList');
+            
+            if (data.algorithm_report.algorithm_status === 'clean') {
+                algorithmStatus.textContent = '✅ 양호';
+                algorithmStatus.className = 'algorithm-status status-clean';
+            } else {
+                algorithmStatus.textContent = '⚠️ 문제 감지';
+                algorithmStatus.className = 'algorithm-status status-problem';
+            }
+
+            // 문제점 목록
+            problemsList.innerHTML = '';
+            const problems = data.algorithm_report.problems;
+            for (const [key, problem] of Object.entries(problems)) {
+                const problemDiv = document.createElement('div');
+                problemDiv.className = `problem-item problem-${problem.severity}`;
+                problemDiv.innerHTML = `
+                    <strong>${getSeverityIcon(problem.severity)} ${getSeverityText(problem.severity)}</strong><br>
+                    ${problem.message}
+                `;
+                problemsList.appendChild(problemDiv);
+            }
+
+            // 추천사항
+            document.getElementById('recommendationText').textContent = data.recommendations;
+
+            // 최근 영상
+            const recentVideosList = document.getElementById('recentVideosList');
+            recentVideosList.innerHTML = '';
+            data.recent_videos.forEach(video => {
+                const videoDiv = document.createElement('div');
+                videoDiv.className = 'video-item';
+                videoDiv.innerHTML = `
+                    <div>
+                        <div class="video-title">${video.title}</div>
+                        <div class="video-date">${formatDate(video.published_at)}</div>
+                    </div>
+                `;
+                recentVideosList.appendChild(videoDiv);
+            });
+            
+			// 부계정 정보 표시 (여기에 추가)
+            
+			displayRelatedChannels(data.related_channels);
+
+            hideLoading();
+            resultsSection.style.display = 'block';
+        }
+
+        function getSeverityIcon(severity) {
+            const icons = {
+                'critical': '🚨',
+                'high': '🔴',
+                'medium': '🟠',
+                'low': '🟢'
+            };
+            return icons[severity] || '🔵';
+        }
+
+        function getSeverityText(severity) {
+            const texts = {
+                'critical': '치명적',
+                'high': '높음',
+                'medium': '보통',
+                'low': '낮음'
+            };
+            return texts[severity] || '알 수 없음';
+        }
+
+        // 이벤트 리스너들
+        searchForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const channelId = extractChannelId(channelInput.value);
+            if (channelId) {
+                socket.emit('analyze_channel', { channelId });
+            }
+        });
+
+        // 소켓 이벤트 처리
+        socket.on('analysis_start', (data) => {
+            showLoading(data.message);
+        });
+
+        socket.on('analysis_complete', (data) => {
+            displayResults(data);
+        });
+
+        socket.on('analysis_error', (data) => {
+            showError(data.error);
+        });
+
+        // 연결 상태 확인
+        socket.on('connect', () => {
+            console.log('서버에 연결됨');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('서버 연결 해제됨');
+        });
+    </script>
+</body>
+</html>
